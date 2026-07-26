@@ -1,7 +1,14 @@
 const { pgTable, uuid, text, timestamp, pgEnum, integer, real, jsonb } = require("drizzle-orm/pg-core");
 
 const sourceType = pgEnum("source_type", ["pdf", "text", "url", "youtube", "vtt"]);
-const sourceStatus = pgEnum("source_status", ["pending", "processing", "ready", "failed"]);
+const sourceStatus = pgEnum("source_status", [
+  "uploading",
+  "extracting",
+  "chunking",
+  "embedding",
+  "ready",
+  "failed",
+]);
 const messageRole = pgEnum("message_role", ["user", "assistant"]);
 
 const users = pgTable("users", {
@@ -30,7 +37,7 @@ const sources = pgTable("sources", {
     .references(() => notebooks.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   sourceType: sourceType("source_type").notNull(),
-  status: sourceStatus("status").default("pending").notNull(),
+  status: sourceStatus("status").default("uploading").notNull(),
   statusError: text("status_error"),
   url: text("url"),
   storagePath: text("storage_path"),
@@ -91,6 +98,9 @@ const messages = pgTable("messages", {
     .references(() => conversations.id, { onDelete: "cascade" }),
   role: messageRole("role").notNull(),
   content: text("content").notNull(),
+  // Citation payload for assistant messages (source/page/timestamp info the
+  // frontend needs to render "sources for this answer" and the Source Viewer).
+  citations: jsonb("citations"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

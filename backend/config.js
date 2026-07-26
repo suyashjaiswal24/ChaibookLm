@@ -18,7 +18,8 @@ const CONFIG = {
 
   // Query phase (CRAG)
   topKPerQueryVariant: 5,
-  finalTopK: 5,
+  finalTopK: 6,
+  maxChunksPerSource: 3,
   maxCragRetries: 3,
   scoreThreshold: 6,
 };

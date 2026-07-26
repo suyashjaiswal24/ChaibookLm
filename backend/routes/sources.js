@@ -174,7 +174,7 @@ router.post("/:sourceId/reindex", async (req, res) => {
   if (!source) return res.status(404).json({ error: "Source not found" });
 
   await deleteQdrantPointsForSource(source.id);
-  await db.update(schema.sources).set({ status: "pending", statusError: null }).where(eq(schema.sources.id, source.id));
+  await db.update(schema.sources).set({ status: "uploading", statusError: null }).where(eq(schema.sources.id, source.id));
   await enqueueSourceProcessing(source.id);
 
   res.json({ message: "Source queued for re-indexing" });

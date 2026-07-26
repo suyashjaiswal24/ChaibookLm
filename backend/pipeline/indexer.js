@@ -31,7 +31,7 @@ async function indexSource(sourceId) {
 
   await db
     .update(schema.sources)
-    .set({ status: "processing", statusError: null })
+    .set({ status: "extracting", statusError: null })
     .where(eq(schema.sources.id, sourceId));
 
   // 1) Extract plain text (+ positional segments: pages, timestamps, etc)
@@ -47,6 +47,8 @@ async function indexSource(sourceId) {
       target: schema.sourceContents.sourceId,
       set: { rawText: fullText, segments },
     });
+
+  await db.update(schema.sources).set({ status: "chunking" }).where(eq(schema.sources.id, sourceId));
 
   // 2) Chunk the text, each chunk carrying its offset in fullText
   const chunkPieces = await chunkText(fullText);
@@ -76,6 +78,8 @@ async function indexSource(sourceId) {
     )
     .returning();
 
+  await db.update(schema.sources).set({ status: "embedding" }).where(eq(schema.sources.id, sourceId));
+
   // 3) Embed chunks
   const vectors = await embedBatch(insertedChunks.map((c) => c.text));
 
@@ -97,7 +101,13 @@ async function indexSource(sourceId) {
       end_offset: chunk.endOffset,
     },
   }));
-  await qdrant.upsert(CONFIG.qdrantCollection, { points });
+  // Upsert in batches — a single request with thousands of points (large
+  // PDFs/transcripts) can exceed Qdrant's request size/timeout and fail.
+  const QDRANT_UPSERT_BATCH_SIZE = 200;
+  for (let i = 0; i < points.length; i += QDRANT_UPSERT_BATCH_SIZE) {
+    const batch = points.slice(i, i + QDRANT_UPSERT_BATCH_SIZE);
+    await qdrant.upsert(CONFIG.qdrantCollection, { points: batch });
+  }
 
   await db.update(schema.sources).set({ status: "ready" }).where(eq(schema.sources.id, sourceId));
 

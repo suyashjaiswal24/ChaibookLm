@@ -18,6 +18,7 @@ const worker = new Worker(
 
 worker.on("failed", async (job, err) => {
   console.error(`[worker] Source ${job.data.sourceId} failed:`, err.message);
+  if (err.cause) console.error("[worker] Underlying cause:", err.cause);
   await db
     .update(schema.sources)
     .set({ status: "failed", statusError: err.message })

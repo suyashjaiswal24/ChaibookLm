@@ -8,6 +8,13 @@
 // Why RRF? Each query variant returns its own ranking of chunks. A chunk
 // that appears near the top across MULTIPLE variants is more likely to be
 // truly relevant than a chunk that only one variant happened to surface.
+//
+// Why per-source top-N before the final merge? A notebook with one huge,
+// highly-relevant source (e.g. a full textbook PDF) can otherwise flood the
+// global top-K with its own chunks, crowding out a smaller but genuinely
+// relevant source (e.g. a short transcript) entirely. Capping how many
+// chunks each source can contribute before the final cross-source merge
+// guarantees every source with a real match gets a fair shot at being cited.
 // ---------------------------------------------------------------------------
 const { qdrant, CONFIG } = require("../config");
 const { embedBatch } = require("../embeddings");
@@ -60,6 +67,22 @@ function reciprocalRankFusion(rankedLists) {
   return [...fused.values()].sort((a, b) => b.rrfScore - a.rrfScore);
 }
 
+// Caps how many chunks a single source can contribute before the final
+// cross-source merge, so one dominant source can't crowd out the rest.
+function capPerSource(rankedDocs, maxPerSource) {
+  const countBySource = new Map();
+  const capped = [];
+
+  for (const doc of rankedDocs) {
+    const count = countBySource.get(doc.sourceId) || 0;
+    if (count >= maxPerSource) continue;
+    countBySource.set(doc.sourceId, count + 1);
+    capped.push(doc);
+  }
+
+  return capped;
+}
+
 /**
  * Given all query variants, search the vector DB (scoped to one notebook)
  * with each and fuse the results.
@@ -79,7 +102,8 @@ async function retrieveWithFusion(variants, notebookId) {
   const rankedLists = await Promise.all(vectors.map((v) => searchByVector(v, notebookId)));
 
   const fused = reciprocalRankFusion(rankedLists);
-  return fused.slice(0, CONFIG.finalTopK);
+  const capped = capPerSource(fused, CONFIG.maxChunksPerSource);
+  return capped.slice(0, CONFIG.finalTopK);
 }
 
 module.exports = { retrieveWithFusion };

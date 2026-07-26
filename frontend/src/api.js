@@ -84,3 +84,50 @@ export function askQuestion(getToken, notebookId, question) {
     body: JSON.stringify({ question }),
   });
 }
+
+// Streams the answer via Server-Sent Events. EventSource can't send an
+// Authorization header or a POST body, so we parse the SSE frames manually
+// from a fetch() stream instead.
+// callbacks: { onToken(text), onDone({sources, score, attempts}), onError(message) }
+export async function askQuestionStream(getToken, notebookId, question, callbacks) {
+  const token = await getToken();
+  const res = await fetch(`${API_BASE}/notebooks/${notebookId}/ask/stream`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ question }),
+  });
+
+  if (!res.ok || !res.body) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Request failed: ${res.status}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    const frames = buffer.split("\n\n");
+    buffer = frames.pop(); // last piece may be incomplete, keep it for next read
+
+    for (const frame of frames) {
+      const eventMatch = frame.match(/^event: (.+)$/m);
+      const dataMatch = frame.match(/^data: (.+)$/m);
+      if (!eventMatch || !dataMatch) continue;
+
+      const event = eventMatch[1];
+      const data = JSON.parse(dataMatch[1]);
+
+      if (event === "token") callbacks.onToken?.(data.text);
+      else if (event === "done") callbacks.onDone?.(data);
+      else if (event === "error") callbacks.onError?.(data.error);
+    }
+  }
+}

@@ -1,12 +1,16 @@
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@clerk/react";
+import { ArrowLeft, Plus, RotateCw, Trash2 } from "lucide-react";
 import AddSourceModal from "./AddSourceModal.jsx";
 import ChatPanel from "./ChatPanel.jsx";
+import CitationsPanel from "./CitationsPanel.jsx";
 import SourceViewer from "./SourceViewer.jsx";
+import StatusDot from "./components/StatusDot.jsx";
+import { Button } from "@/components/ui/button";
+import { statusMeta, ACTIVE_STATUSES } from "@/lib/sourceStatus";
 import { listSources, addSource, deleteSource, reindexSource } from "./api.js";
 
 const POLL_INTERVAL_MS = 3000;
-const ACTIVE_STATUSES = ["pending", "processing"];
 
 function NotebookWorkspace({ notebook, onBack }) {
   const { getToken } = useAuth();
@@ -14,6 +18,7 @@ function NotebookWorkspace({ notebook, onBack }) {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [viewerCitation, setViewerCitation] = useState(null);
+  const [latestCitations, setLatestCitations] = useState([]);
   const pollRef = useRef(null);
 
   useEffect(() => {
@@ -56,53 +61,70 @@ function NotebookWorkspace({ notebook, onBack }) {
   }
 
   return (
-    <div className="layout">
-      <aside className="sidebar">
-        <button className="back-btn" onClick={onBack}>
-          ← All Notebooks
+    <div className="flex h-[calc(100vh-57px)]">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white p-4">
+        <button
+          onClick={onBack}
+          className="mb-3 flex items-center gap-1 self-start text-xs font-medium text-slate-500 hover:text-slate-700"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> All Notebooks
         </button>
-        <h2>{notebook.title}</h2>
-        <button className="add-btn" onClick={() => setModalOpen(true)}>
-          + Add Source
-        </button>
-      </aside>
+        <h2 className="mb-3 truncate text-sm font-semibold text-slate-900">{notebook.title}</h2>
+        <Button onClick={() => setModalOpen(true)} className="w-full">
+          <Plus className="h-4 w-4" /> Add Source
+        </Button>
 
-      <main className="content">
-        <h1>Sources</h1>
         {loading ? (
-          <p>Loading...</p>
+          <p className="mt-4 text-xs text-slate-400">Loading...</p>
         ) : sources.length === 0 ? (
-          <p className="empty">No sources added yet.</p>
+          <p className="mt-4 text-xs text-slate-400">No sources yet.</p>
         ) : (
-          <ul className="source-list">
-            {sources.map((s) => (
-              <li key={s.id}>
-                <strong>{s.sourceType}</strong> — {s.title}
-                <span className={`status-badge status-${s.status}`}>{s.status}</span>
-                <span className="time"> ({new Date(s.createdAt).toLocaleString()})</span>
-                {s.status === "failed" && s.statusError && (
-                  <div className="source-error">{s.statusError}</div>
-                )}
-                <div className="source-actions">
-                  <button onClick={() => handleReindex(s.id)}>Re-index</button>
-                  <button className="danger" onClick={() => handleDelete(s.id)}>
-                    Delete
-                  </button>
-                </div>
-              </li>
-            ))}
+          <ul className="mt-4 flex-1 space-y-0.5 overflow-y-auto">
+            {sources.map((s) => {
+              const meta = statusMeta(s.status);
+              return (
+                <li
+                  key={s.id}
+                  className="group flex items-center gap-2 rounded-md px-1.5 py-2 hover:bg-slate-50"
+                >
+                  <StatusDot status={s.status} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm text-slate-700">{s.title}</p>
+                    {s.status === "failed" && s.statusError ? (
+                      <p className="truncate text-xs text-red-600">{s.statusError}</p>
+                    ) : (
+                      <p className="text-xs text-slate-400">{meta.label}</p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Button variant="ghost" size="icon" title="Re-index" onClick={() => handleReindex(s.id)}>
+                      <RotateCw className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      title="Delete"
+                      className="hover:bg-red-50 hover:text-red-600"
+                      onClick={() => handleDelete(s.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
-      </main>
+      </aside>
 
       <ChatPanel
         notebookId={notebook.id}
         hasReadySources={sources.some((s) => s.status === "ready")}
-        onOpenCitation={setViewerCitation}
+        onLatestCitations={setLatestCitations}
       />
 
-      {modalOpen && (
-        <AddSourceModal onClose={() => setModalOpen(false)} onSubmit={submitSource} />
+      {latestCitations.length > 0 && (
+        <CitationsPanel citations={latestCitations} onOpenCitation={setViewerCitation} />
       )}
 
       {viewerCitation && (
@@ -111,6 +133,10 @@ function NotebookWorkspace({ notebook, onBack }) {
           citation={viewerCitation}
           onClose={() => setViewerCitation(null)}
         />
+      )}
+
+      {modalOpen && (
+        <AddSourceModal onClose={() => setModalOpen(false)} onSubmit={submitSource} />
       )}
     </div>
   );

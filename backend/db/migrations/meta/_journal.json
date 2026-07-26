@@ -29,6 +29,20 @@
       "when": 1785077096100,
       "tag": "0003_sour_cerebro",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1785081234605,
+      "tag": "0004_swift_tyger_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1785085464309,
+      "tag": "0005_faulty_menace",
+      "breakpoints": true
     }
   ]
 }
