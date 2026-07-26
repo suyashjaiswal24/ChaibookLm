@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@clerk/react";
 import AddSourceModal from "./AddSourceModal.jsx";
+import ChatPanel from "./ChatPanel.jsx";
 import { listSources, addSource } from "./api.js";
 
 function NotebookWorkspace({ notebook, onBack }) {
@@ -51,12 +52,18 @@ function NotebookWorkspace({ notebook, onBack }) {
             {sources.map((s) => (
               <li key={s.id}>
                 <strong>{s.sourceType}</strong> — {s.title}
+                <span className={`status-badge status-${s.status}`}>{s.status}</span>
                 <span className="time"> ({new Date(s.createdAt).toLocaleString()})</span>
               </li>
             ))}
           </ul>
         )}
       </main>
+
+      <ChatPanel
+        notebookId={notebook.id}
+        hasReadySources={sources.some((s) => s.status === "ready")}
+      />
 
       {modalOpen && (
         <AddSourceModal onClose={() => setModalOpen(false)} onSubmit={submitSource} />

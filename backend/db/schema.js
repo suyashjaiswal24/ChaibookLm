@@ -2,6 +2,7 @@ const { pgTable, uuid, text, timestamp, pgEnum, integer } = require("drizzle-orm
 
 const sourceType = pgEnum("source_type", ["pdf", "text", "url", "youtube", "vtt"]);
 const sourceStatus = pgEnum("source_status", ["pending", "processing", "ready", "failed"]);
+const messageRole = pgEnum("message_role", ["user", "assistant"]);
 
 const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -60,12 +61,36 @@ const chunks = pgTable("chunks", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// One ongoing conversation per notebook.
+const conversations = pgTable("conversations", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  notebookId: uuid("notebook_id")
+    .notNull()
+    .references(() => notebooks.id, { onDelete: "cascade" })
+    .unique(),
+  title: text("title"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+const messages = pgTable("messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  conversationId: uuid("conversation_id")
+    .notNull()
+    .references(() => conversations.id, { onDelete: "cascade" }),
+  role: messageRole("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 module.exports = {
   sourceType,
   sourceStatus,
+  messageRole,
   users,
   notebooks,
   sources,
   sourceContents,
   chunks,
+  conversations,
+  messages,
 };

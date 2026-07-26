@@ -44,3 +44,15 @@ export function addSource(getToken, notebookId, type, body, isJson) {
     body: isJson ? JSON.stringify(body) : body,
   });
 }
+
+export function getConversation(getToken, notebookId) {
+  return request(getToken, `/notebooks/${notebookId}/ask`);
+}
+
+export function askQuestion(getToken, notebookId, question) {
+  return request(getToken, `/notebooks/${notebookId}/ask`, {
+    method: "POST",
+    isJson: true,
+    body: JSON.stringify({ question }),
+  });
+}

@@ -27,9 +27,10 @@ const { gradeAnswer } = require("./grader");
  * Run the full CRAG query pipeline for one user question within one notebook.
  * @param {string} rawQuery - the user's original question
  * @param {string} notebookId - restricts retrieval to this notebook's chunks
+ * @param {Array<{role: "user"|"assistant", content: string}>} [history] - prior turns in this notebook's conversation
  * @returns {Promise<{answer: string, score: number, attempts: number, sources: Array}>}
  */
-async function answerQuery(rawQuery, notebookId) {
+async function answerQuery(rawQuery, notebookId, history = []) {
   let bestAnswer = null;
   let bestScore = -1;
   let bestDocs = [];
@@ -43,7 +44,7 @@ async function answerQuery(rawQuery, notebookId) {
       return { answer: "No sources have been added to this notebook yet, or nothing relevant was found.", score: 0, attempts: attempt, sources: [] };
     }
 
-    const answer = await generateAnswer(rawQuery, topDocs);
+    const answer = await generateAnswer(rawQuery, topDocs, history);
     const { score, improvementKeywords: newKeywords } = await gradeAnswer(rawQuery, answer);
 
     if (score > bestScore) {
