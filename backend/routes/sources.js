@@ -1,11 +1,14 @@
 const express = require("express");
 const multer = require("multer");
 const path = require("path");
+const fs = require("fs/promises");
+const AdmZip = require("adm-zip");
 const { eq, and, desc } = require("drizzle-orm");
 const { db, schema } = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { enqueueSourceProcessing } = require("../queues/sourceQueue");
 const { qdrant, CONFIG } = require("../config");
+const { withRetry } = require("../pipeline/withRetry");
 
 const router = express.Router({ mergeParams: true });
 router.use(requireAuth);
@@ -15,6 +18,10 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`),
 });
 const upload = multer({ storage });
+
+// Zip uploads are read into memory just long enough to extract the VTT
+// files inside; the zip itself isn't kept on disk.
+const uploadZip = multer({ storage: multer.memoryStorage() });
 
 // Confirms the notebook exists and belongs to the current user.
 async function getOwnedNotebook(notebookId, userId) {
@@ -126,6 +133,60 @@ router.post("/vtt", upload.single("file"), async (req, res) => {
   res.status(201).json(source);
 });
 
+// Add a whole course's worth of VTT/transcript files from one zip upload.
+// Every .vtt/.srt file found in the zip (including in subfolders) becomes
+// its own source, titled with its folder path so e.g. "Week 1/Lecture 2.vtt"
+// stays distinguishable from other weeks' "Lecture 2.vtt".
+router.post("/vtt-zip", uploadZip.single("file"), async (req, res) => {
+  const notebook = await getOwnedNotebook(req.params.notebookId, req.user.id);
+  if (!notebook) return res.status(404).json({ error: "Notebook not found" });
+  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+  let zip;
+  try {
+    zip = new AdmZip(req.file.buffer);
+  } catch (err) {
+    return res.status(400).json({ error: "Could not read zip file" });
+  }
+
+  // Ignore macOS zip cruft (__MACOSX/ resource-fork folder, .DS_Store,
+  // and AppleDouble "._filename" shadow files) so only real transcripts count.
+  const isMacJunk = (entryName) =>
+    entryName.startsWith("__MACOSX/") || entryName.includes("/._") || entryName.startsWith("._") || entryName.endsWith(".DS_Store");
+
+  const transcriptEntries = zip
+    .getEntries()
+    .filter((entry) => !entry.isDirectory && !isMacJunk(entry.entryName) && /\.(vtt|srt)$/i.test(entry.entryName));
+
+  if (transcriptEntries.length === 0) {
+    return res.status(400).json({ error: "No .vtt or .srt files found in the zip" });
+  }
+
+  const createdSources = [];
+  for (const entry of transcriptEntries) {
+    const title = entry.entryName.replace(/\\/g, "/").replace(/\/+$/, "");
+    const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${title.replace(/\//g, "_")}`;
+    const destPath = path.join(__dirname, "..", "uploads", filename);
+
+    await fs.writeFile(destPath, entry.getData());
+
+    const [source] = await db
+      .insert(schema.sources)
+      .values({
+        notebookId: notebook.id,
+        title,
+        sourceType: "vtt",
+        storagePath: filename,
+      })
+      .returning();
+
+    await enqueueSourceProcessing(source.id);
+    createdSources.push(source);
+  }
+
+  res.status(201).json({ sources: createdSources, count: createdSources.length });
+});
+
 // Stream the original uploaded file (PDF/VTT) for the Source Viewer.
 // Auth + notebook ownership checked, so files aren't served publicly.
 router.get("/:sourceId/file", async (req, res) => {
@@ -180,6 +241,21 @@ router.post("/:sourceId/reindex", async (req, res) => {
   res.json({ message: "Source queued for re-indexing" });
 });
 
+// Delete every source in the notebook at once.
+router.delete("/", async (req, res) => {
+  const notebook = await getOwnedNotebook(req.params.notebookId, req.user.id);
+  if (!notebook) return res.status(404).json({ error: "Notebook not found" });
+
+  const deleted = await db
+    .delete(schema.sources)
+    .where(eq(schema.sources.notebookId, notebook.id))
+    .returning();
+
+  await Promise.all(deleted.map((s) => deleteQdrantPointsForSource(s.id)));
+
+  res.json({ message: "All sources deleted", count: deleted.length });
+});
+
 // Delete a source
 router.delete("/:sourceId", async (req, res) => {
   const notebook = await getOwnedNotebook(req.params.notebookId, req.user.id);
@@ -199,9 +275,11 @@ router.delete("/:sourceId", async (req, res) => {
 
 async function deleteQdrantPointsForSource(sourceId) {
   try {
-    await qdrant.delete(CONFIG.qdrantCollection, {
-      filter: { must: [{ key: "source_id", match: { value: sourceId } }] },
-    });
+    await withRetry(() =>
+      qdrant.delete(CONFIG.qdrantCollection, {
+        filter: { must: [{ key: "source_id", match: { value: sourceId } }] },
+      })
+    );
   } catch (err) {
     // Collection may not exist yet if nothing has ever been indexed.
     console.error(`Failed to delete Qdrant points for source ${sourceId}:`, err.message);

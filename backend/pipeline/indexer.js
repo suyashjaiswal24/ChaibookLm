@@ -6,6 +6,7 @@ const { extractSourceText } = require("../extractors");
 const { chunkText } = require("./chunker");
 const { mapChunkToPosition } = require("./positionMapper");
 const { embedBatch } = require("../embeddings");
+const { withRetry } = require("./withRetry");
 
 async function ensureCollection() {
   const { collections } = await qdrant.getCollections();
@@ -106,7 +107,7 @@ async function indexSource(sourceId) {
   const QDRANT_UPSERT_BATCH_SIZE = 200;
   for (let i = 0; i < points.length; i += QDRANT_UPSERT_BATCH_SIZE) {
     const batch = points.slice(i, i + QDRANT_UPSERT_BATCH_SIZE);
-    await qdrant.upsert(CONFIG.qdrantCollection, { points: batch });
+    await withRetry(() => qdrant.upsert(CONFIG.qdrantCollection, { points: batch }));
   }
 
   await db.update(schema.sources).set({ status: "ready" }).where(eq(schema.sources.id, sourceId));

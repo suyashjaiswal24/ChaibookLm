@@ -1,14 +1,15 @@
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@clerk/react";
-import { ArrowLeft, Plus, RotateCw, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, RotateCw, Trash2, XCircle } from "lucide-react";
 import AddSourceModal from "./AddSourceModal.jsx";
 import ChatPanel from "./ChatPanel.jsx";
 import CitationsPanel from "./CitationsPanel.jsx";
 import SourceViewer from "./SourceViewer.jsx";
 import StatusDot from "./components/StatusDot.jsx";
+import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import { Button } from "@/components/ui/button";
 import { statusMeta, ACTIVE_STATUSES } from "@/lib/sourceStatus";
-import { listSources, addSource, deleteSource, reindexSource } from "./api.js";
+import { listSources, addSource, deleteSource, deleteAllSources, reindexSource } from "./api.js";
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -19,6 +20,7 @@ function NotebookWorkspace({ notebook, onBack }) {
   const [loading, setLoading] = useState(true);
   const [viewerCitation, setViewerCitation] = useState(null);
   const [latestCitations, setLatestCitations] = useState([]);
+  const [confirmRemoveAll, setConfirmRemoveAll] = useState(false);
   const pollRef = useRef(null);
 
   useEffect(() => {
@@ -60,6 +62,11 @@ function NotebookWorkspace({ notebook, onBack }) {
     refresh();
   }
 
+  async function handleRemoveAll() {
+    await deleteAllSources(getToken, notebook.id);
+    refresh();
+  }
+
   return (
     <div className="flex h-[calc(100vh-57px)]">
       <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white p-4">
@@ -73,6 +80,16 @@ function NotebookWorkspace({ notebook, onBack }) {
         <Button onClick={() => setModalOpen(true)} className="w-full">
           <Plus className="h-4 w-4" /> Add Source
         </Button>
+
+        {sources.length > 0 && (
+          <Button
+            variant="ghost"
+            onClick={() => setConfirmRemoveAll(true)}
+            className="mt-2 w-full justify-start text-red-600 hover:bg-red-50 hover:text-red-700"
+          >
+            <XCircle className="h-4 w-4" /> Remove all sources
+          </Button>
+        )}
 
         {loading ? (
           <p className="mt-4 text-xs text-slate-400">Loading...</p>
@@ -137,6 +154,16 @@ function NotebookWorkspace({ notebook, onBack }) {
 
       {modalOpen && (
         <AddSourceModal onClose={() => setModalOpen(false)} onSubmit={submitSource} />
+      )}
+
+      {confirmRemoveAll && (
+        <ConfirmDialog
+          title="Remove all sources?"
+          description={`This will permanently delete all ${sources.length} source(s) in this notebook, including their chunks and embeddings. This can't be undone.`}
+          confirmLabel="Remove all"
+          onConfirm={handleRemoveAll}
+          onClose={() => setConfirmRemoveAll(false)}
+        />
       )}
     </div>
   );

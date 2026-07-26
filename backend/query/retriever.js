@@ -18,20 +18,23 @@
 // ---------------------------------------------------------------------------
 const { qdrant, CONFIG } = require("../config");
 const { embedBatch } = require("../embeddings");
+const { withRetry } = require("../pipeline/withRetry");
 
 const RRF_K = 60; // standard smoothing constant used in RRF formula
 
 // Search Qdrant for the closest chunks to one embedding vector, restricted
 // to a single notebook (Phase 11: "only that notebook's chunks are searched").
 async function searchByVector(vector, notebookId) {
-  const results = await qdrant.search(CONFIG.qdrantCollection, {
-    vector,
-    limit: CONFIG.topKPerQueryVariant,
-    with_payload: true,
-    filter: {
-      must: [{ key: "notebook_id", match: { value: notebookId } }],
-    },
-  });
+  const results = await withRetry(() =>
+    qdrant.search(CONFIG.qdrantCollection, {
+      vector,
+      limit: CONFIG.topKPerQueryVariant,
+      with_payload: true,
+      filter: {
+        must: [{ key: "notebook_id", match: { value: notebookId } }],
+      },
+    })
+  );
 
   return results.map((r) => ({
     id: r.id,

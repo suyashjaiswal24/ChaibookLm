@@ -51,6 +51,12 @@ export function deleteSource(getToken, notebookId, sourceId) {
   });
 }
 
+export function deleteAllSources(getToken, notebookId) {
+  return request(getToken, `/notebooks/${notebookId}/sources`, {
+    method: "DELETE",
+  });
+}
+
 export function reindexSource(getToken, notebookId, sourceId) {
   return request(getToken, `/notebooks/${notebookId}/sources/${sourceId}/reindex`, {
     method: "POST",

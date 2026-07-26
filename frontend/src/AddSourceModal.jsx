@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileText, Type, Globe, Video, Captions, ArrowLeft, Loader2 } from "lucide-react";
+import { FileText, Type, Globe, Video, Captions, FolderArchive, ArrowLeft, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,6 +11,7 @@ const SOURCE_TYPES = [
   { key: "url", label: "Website URL", icon: Globe },
   { key: "youtube", label: "YouTube Video", icon: Video },
   { key: "vtt", label: "VTT / Transcript", icon: Captions },
+  { key: "vtt-zip", label: "VTT Course (.zip)", icon: FolderArchive },
 ];
 
 function AddSourceModal({ onClose, onSubmit }) {
@@ -57,7 +58,7 @@ function SourceForm({ type, onBack, onSubmit }) {
     e.preventDefault();
     setError("");
     try {
-      if (type === "pdf" || type === "vtt") {
+      if (type === "pdf" || type === "vtt" || type === "vtt-zip") {
         if (!file) return;
         const formData = new FormData();
         formData.append("file", file);
@@ -89,14 +90,20 @@ function SourceForm({ type, onBack, onSubmit }) {
         <ArrowLeft className="h-3.5 w-3.5" /> Back
       </button>
 
-      {(type === "pdf" || type === "vtt") && (
+      {(type === "pdf" || type === "vtt" || type === "vtt-zip") && (
         <Input
           type="file"
-          accept={type === "pdf" ? "application/pdf" : ".vtt,.srt,.txt"}
+          accept={type === "pdf" ? "application/pdf" : type === "vtt-zip" ? ".zip" : ".vtt,.srt,.txt"}
           onChange={(e) => setFile(e.target.files[0])}
           disabled={submitting}
           className="cursor-pointer file:mr-3 file:cursor-pointer file:rounded-md file:border-0 file:bg-brand-600 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white hover:file:bg-brand-700"
         />
+      )}
+      {type === "vtt-zip" && (
+        <p className="text-xs text-slate-500">
+          Upload a .zip of your course's VTT/SRT files — subfolders are supported, and each transcript
+          becomes its own source.
+        </p>
       )}
 
       {type === "text" && (
