@@ -33,6 +33,14 @@ export function deleteNotebook(getToken, notebookId) {
   return request(getToken, `/notebooks/${notebookId}`, { method: "DELETE" });
 }
 
+export function renameNotebook(getToken, notebookId, title) {
+  return request(getToken, `/notebooks/${notebookId}`, {
+    method: "PATCH",
+    isJson: true,
+    body: JSON.stringify({ title }),
+  });
+}
+
 export function listSources(getToken, notebookId) {
   return request(getToken, `/notebooks/${notebookId}/sources`);
 }

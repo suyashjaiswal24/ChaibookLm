@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useAuth } from "@clerk/react";
-import { ArrowLeft, Plus, RotateCw, Trash2, XCircle } from "lucide-react";
+import { ArrowLeft, Plus, RotateCw, Trash2, XCircle, Pencil } from "lucide-react";
 import AddSourceModal from "./AddSourceModal.jsx";
 import ChatPanel from "./ChatPanel.jsx";
 import CitationsPanel from "./CitationsPanel.jsx";
@@ -8,12 +8,20 @@ import SourceViewer from "./SourceViewer.jsx";
 import StatusDot from "./components/StatusDot.jsx";
 import ConfirmDialog from "./components/ConfirmDialog.jsx";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { statusMeta, ACTIVE_STATUSES } from "@/lib/sourceStatus";
-import { listSources, addSource, deleteSource, deleteAllSources, reindexSource } from "./api.js";
+import {
+  listSources,
+  addSource,
+  deleteSource,
+  deleteAllSources,
+  reindexSource,
+  renameNotebook,
+} from "./api.js";
 
 const POLL_INTERVAL_MS = 3000;
 
-function NotebookWorkspace({ notebook, onBack }) {
+function NotebookWorkspace({ notebook, onBack, onNotebookUpdated }) {
   const { getToken } = useAuth();
   const [modalOpen, setModalOpen] = useState(false);
   const [sources, setSources] = useState([]);
@@ -21,10 +29,14 @@ function NotebookWorkspace({ notebook, onBack }) {
   const [viewerCitation, setViewerCitation] = useState(null);
   const [latestCitations, setLatestCitations] = useState([]);
   const [confirmRemoveAll, setConfirmRemoveAll] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(notebook.title);
   const pollRef = useRef(null);
 
   useEffect(() => {
     refresh();
+    setTitleDraft(notebook.title);
+    setEditingTitle(false);
     return () => clearInterval(pollRef.current);
   }, [notebook.id]);
 
@@ -67,6 +79,17 @@ function NotebookWorkspace({ notebook, onBack }) {
     refresh();
   }
 
+  async function commitRenameNotebook() {
+    const trimmed = titleDraft.trim();
+    setEditingTitle(false);
+    if (!trimmed || trimmed === notebook.title) {
+      setTitleDraft(notebook.title);
+      return;
+    }
+    const updated = await renameNotebook(getToken, notebook.id, trimmed);
+    onNotebookUpdated?.(updated);
+  }
+
   return (
     <div className="flex h-[calc(100vh-57px)]">
       <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200 bg-white p-4">
@@ -76,7 +99,32 @@ function NotebookWorkspace({ notebook, onBack }) {
         >
           <ArrowLeft className="h-3.5 w-3.5" /> All Notebooks
         </button>
-        <h2 className="mb-3 truncate text-sm font-semibold text-slate-900">{notebook.title}</h2>
+        {editingTitle ? (
+          <Input
+            autoFocus
+            value={titleDraft}
+            onChange={(e) => setTitleDraft(e.target.value)}
+            onBlur={commitRenameNotebook}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitRenameNotebook();
+              if (e.key === "Escape") {
+                setTitleDraft(notebook.title);
+                setEditingTitle(false);
+              }
+            }}
+            className="mb-3 text-sm font-semibold"
+          />
+        ) : (
+          <div className="group mb-3 flex items-center gap-1.5">
+            <h2 className="truncate text-sm font-semibold text-slate-900">{notebook.title}</h2>
+            <button
+              onClick={() => setEditingTitle(true)}
+              className="shrink-0 text-slate-400 opacity-0 hover:text-slate-600 group-hover:opacity-100"
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          </div>
+        )}
         <Button onClick={() => setModalOpen(true)} className="w-full">
           <Plus className="h-4 w-4" /> Add Source
         </Button>

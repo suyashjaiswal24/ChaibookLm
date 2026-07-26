@@ -41,6 +41,7 @@ function App() {
           <NotebookWorkspace
             notebook={activeNotebook}
             onBack={() => setActiveNotebook(null)}
+            onNotebookUpdated={setActiveNotebook}
           />
         ) : (
           <NotebooksScreen onOpenNotebook={setActiveNotebook} />
