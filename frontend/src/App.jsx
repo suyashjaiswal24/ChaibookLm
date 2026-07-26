@@ -1,5 +1,6 @@
 import { useState } from "react";
 import AddSourceModal from "./AddSourceModal.jsx";
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/react";
 
 const API_BASE = "http://localhost:3002/api/upload";
 
@@ -22,41 +23,66 @@ function App() {
       setModalOpen(false);
     } catch (err) {
       setSources((prev) => [
-        { label, message: "Failed - is the backend running?", time: new Date().toLocaleTimeString() },
+        {
+          label,
+          message: "Failed - is the backend running?",
+          time: new Date().toLocaleTimeString(),
+        },
         ...prev,
       ]);
     }
   }
 
   return (
-    <div className="layout">
-      <aside className="sidebar">
-        <h2>Sources</h2>
-        <button className="add-btn" onClick={() => setModalOpen(true)}>
-          + Add Source
-        </button>
-      </aside>
+    <>
+      <Show when="signed-out">
+        <div className="auth-screen">
+          <h1>ChaibookLM</h1>
+          <p>Sign in to continue</p>
+          <div className="auth-buttons">
+            <SignInButton />
+            <SignUpButton />
+          </div>
+        </div>
+      </Show>
 
-      <main className="content">
-        <h1>ChaibookLM</h1>
-        {sources.length === 0 ? (
-          <p className="empty">No sources added yet.</p>
-        ) : (
-          <ul className="source-list">
-            {sources.map((s, i) => (
-              <li key={i}>
-                <strong>{s.label}</strong> — {s.message}
-                <span className="time"> ({s.time})</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </main>
+      <Show when="signed-in">
+        <header className="topbar">
+          <UserButton />
+        </header>
+        <div className="layout">
+          <aside className="sidebar">
+            <h2>Sources</h2>
+            <button className="add-btn" onClick={() => setModalOpen(true)}>
+              + Add Source
+            </button>
+          </aside>
 
-      {modalOpen && (
-        <AddSourceModal onClose={() => setModalOpen(false)} onSubmit={submitSource} />
-      )}
-    </div>
+          <main className="content">
+            <h1>ChaibookLM</h1>
+            {sources.length === 0 ? (
+              <p className="empty">No sources added yet.</p>
+            ) : (
+              <ul className="source-list">
+                {sources.map((s, i) => (
+                  <li key={i}>
+                    <strong>{s.label}</strong> — {s.message}
+                    <span className="time"> ({s.time})</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </main>
+
+          {modalOpen && (
+            <AddSourceModal
+              onClose={() => setModalOpen(false)}
+              onSubmit={submitSource}
+            />
+          )}
+        </div>
+      </Show>
+    </>
   );
 }
 
