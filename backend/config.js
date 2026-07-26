@@ -4,7 +4,10 @@ const OpenAI = require("openai");
 const { QdrantClient } = require("@qdrant/js-client-rest");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const qdrant = new QdrantClient({ url: process.env.QDRANT_URL });
+const qdrant = new QdrantClient({
+  url: process.env.QDRANT_URL,
+  apiKey: process.env.QDRANT_API_KEY || undefined,
+});
 
 const CONFIG = {
   chatModel: process.env.OPENAI_CHAT_MODEL || "gpt-4o-mini",
