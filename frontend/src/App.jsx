@@ -25,7 +25,10 @@ function App() {
         </header>
 
         {activeNotebook ? (
-          <NotebookWorkspace notebook={activeNotebook} onBack={() => setActiveNotebook(null)} />
+          <NotebookWorkspace
+            notebook={activeNotebook}
+            onBack={() => setActiveNotebook(null)}
+          />
         ) : (
           <NotebooksScreen onOpenNotebook={setActiveNotebook} />
         )}
