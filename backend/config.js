@@ -15,6 +15,12 @@ const CONFIG = {
   chunkSize: 500,
   chunkOverlap: 50,
   redisUrl: process.env.REDIS_URL || "redis://localhost:6379",
+
+  // Query phase (CRAG)
+  topKPerQueryVariant: 5,
+  finalTopK: 5,
+  maxCragRetries: 3,
+  scoreThreshold: 6,
 };
 
 module.exports = { openai, qdrant, CONFIG };

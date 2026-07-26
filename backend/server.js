@@ -5,6 +5,7 @@ const cors = require("cors");
 
 const notebooksRouter = require("./routes/notebooks");
 const sourcesRouter = require("./routes/sources");
+const askRouter = require("./routes/ask");
 
 const app = express();
 const PORT = process.env.PORT || 3002;
@@ -14,6 +15,7 @@ app.use(express.json());
 
 app.use("/api/notebooks", notebooksRouter);
 app.use("/api/notebooks/:notebookId/sources", sourcesRouter);
+app.use("/api/notebooks/:notebookId/ask", askRouter);
 
 app.listen(PORT, () => {
   console.log(`ChaibookLM backend running on http://localhost:${PORT}`);
