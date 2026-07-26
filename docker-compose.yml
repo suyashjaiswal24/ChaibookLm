@@ -12,5 +12,15 @@ services:
     volumes:
       - chaibooklm-postgres-data:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    container_name: chaibooklm-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - chaibooklm-redis-data:/data
+
 volumes:
   chaibooklm-postgres-data:
+  chaibooklm-redis-data:

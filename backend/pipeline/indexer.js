@@ -1,0 +1,92 @@
+const { randomUUID } = require("crypto");
+const { eq } = require("drizzle-orm");
+const { db, schema } = require("../db");
+const { qdrant, CONFIG } = require("../config");
+const { extractSourceText } = require("../extractors");
+const { chunkText } = require("./chunker");
+const { embedBatch } = require("../embeddings");
+
+async function ensureCollection() {
+  const { collections } = await qdrant.getCollections();
+  const exists = collections.some((c) => c.name === CONFIG.qdrantCollection);
+  if (!exists) {
+    await qdrant.createCollection(CONFIG.qdrantCollection, {
+      vectors: { size: CONFIG.embeddingDims, distance: "Cosine" },
+    });
+  }
+}
+
+// Full indexing pipeline for one source: extract -> chunk -> embed -> store.
+async function indexSource(sourceId) {
+  const [row] = await db
+    .select({ source: schema.sources, userId: schema.notebooks.userId })
+    .from(schema.sources)
+    .innerJoin(schema.notebooks, eq(schema.sources.notebookId, schema.notebooks.id))
+    .where(eq(schema.sources.id, sourceId));
+  if (!row) throw new Error("Source not found");
+
+  const source = row.source;
+  const userId = row.userId;
+
+  await db
+    .update(schema.sources)
+    .set({ status: "processing", statusError: null })
+    .where(eq(schema.sources.id, sourceId));
+
+  // 1) Extract plain text
+  const rawText = await extractSourceText(source);
+  if (!rawText || !rawText.trim()) {
+    throw new Error("No text could be extracted from this source.");
+  }
+
+  await db
+    .insert(schema.sourceContents)
+    .values({ sourceId, rawText })
+    .onConflictDoUpdate({ target: schema.sourceContents.sourceId, set: { rawText } });
+
+  // 2) Chunk the text
+  const chunkTexts = await chunkText(rawText);
+  if (chunkTexts.length === 0) {
+    throw new Error("Text produced no chunks.");
+  }
+
+  // Replace any previous chunks for this source (e.g. on reprocessing)
+  await db.delete(schema.chunks).where(eq(schema.chunks.sourceId, sourceId));
+
+  const insertedChunks = await db
+    .insert(schema.chunks)
+    .values(
+      chunkTexts.map((text, i) => ({
+        sourceId,
+        chunkIndex: i,
+        text,
+        tokenCount: Math.round(text.length / 4),
+      }))
+    )
+    .returning();
+
+  // 3) Embed chunks
+  const vectors = await embedBatch(insertedChunks.map((c) => c.text));
+
+  // 4) Store in Qdrant
+  await ensureCollection();
+  const points = insertedChunks.map((chunk, i) => ({
+    id: randomUUID(),
+    vector: vectors[i],
+    payload: {
+      user_id: userId,
+      notebook_id: source.notebookId,
+      source_id: source.id,
+      chunk_id: chunk.id,
+      chunk_index: chunk.chunkIndex,
+      text: chunk.text,
+    },
+  }));
+  await qdrant.upsert(CONFIG.qdrantCollection, { points });
+
+  await db.update(schema.sources).set({ status: "ready" }).where(eq(schema.sources.id, sourceId));
+
+  return { chunksIndexed: points.length };
+}
+
+module.exports = { indexSource };

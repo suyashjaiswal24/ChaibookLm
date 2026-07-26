@@ -4,6 +4,7 @@ const path = require("path");
 const { eq, and, desc } = require("drizzle-orm");
 const { db, schema } = require("../db");
 const { requireAuth } = require("../middleware/auth");
+const { enqueueSourceProcessing } = require("../queues/sourceQueue");
 
 const router = express.Router({ mergeParams: true });
 router.use(requireAuth);
@@ -51,6 +52,7 @@ router.post("/pdf", upload.single("file"), async (req, res) => {
       storagePath: req.file.filename,
     })
     .returning();
+  await enqueueSourceProcessing(source.id);
   res.status(201).json(source);
 });
 
@@ -70,6 +72,7 @@ router.post("/text", express.json(), async (req, res) => {
       content: text,
     })
     .returning();
+  await enqueueSourceProcessing(source.id);
   res.status(201).json(source);
 });
 
@@ -84,6 +87,7 @@ router.post("/url", express.json(), async (req, res) => {
     .insert(schema.sources)
     .values({ notebookId: notebook.id, title: url, sourceType: "url", url })
     .returning();
+  await enqueueSourceProcessing(source.id);
   res.status(201).json(source);
 });
 
@@ -98,6 +102,7 @@ router.post("/youtube", express.json(), async (req, res) => {
     .insert(schema.sources)
     .values({ notebookId: notebook.id, title: url, sourceType: "youtube", url })
     .returning();
+  await enqueueSourceProcessing(source.id);
   res.status(201).json(source);
 });
 
@@ -116,6 +121,7 @@ router.post("/vtt", upload.single("file"), async (req, res) => {
       storagePath: req.file.filename,
     })
     .returning();
+  await enqueueSourceProcessing(source.id);
   res.status(201).json(source);
 });
 
