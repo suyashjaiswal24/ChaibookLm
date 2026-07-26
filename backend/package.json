@@ -1,0 +1,19 @@
+{
+  "name": "chaibook-backend",
+  "version": "1.0.0",
+  "description": "Backend for ChaibookLM - a simple NotebookLM-style upload app",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "multer": "^2.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
