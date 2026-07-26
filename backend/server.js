@@ -7,7 +7,7 @@ const multer = require("multer");
 const path = require("path");
 
 const app = express();
-const PORT = 3001;
+const PORT = 3002;
 
 // Store uploaded files in the "uploads" folder, keep the original name.
 const storage = multer.diskStorage({
