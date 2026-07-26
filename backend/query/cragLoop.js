@@ -17,7 +17,9 @@
 //   and grade again. Repeat up to CONFIG.maxCragRetries times, then return
 //   the best answer found even if it never crossed the threshold.
 // ---------------------------------------------------------------------------
+const { inArray } = require("drizzle-orm");
 const { CONFIG } = require("../config");
+const { db, schema } = require("../db");
 const { translateQuery } = require("./queryTranslation");
 const { retrieveWithFusion } = require("./retriever");
 const { generateAnswer } = require("./generator");
@@ -54,7 +56,7 @@ async function answerQuery(rawQuery, notebookId, history = []) {
     }
 
     if (score > CONFIG.scoreThreshold) {
-      return { answer, score, attempts: attempt, sources: summarizeSources(topDocs) };
+      return { answer, score, attempts: attempt, sources: await summarizeSources(topDocs) };
     }
 
     improvementKeywords = newKeywords;
@@ -64,12 +66,39 @@ async function answerQuery(rawQuery, notebookId, history = []) {
     answer: bestAnswer,
     score: bestScore,
     attempts: CONFIG.maxCragRetries,
-    sources: summarizeSources(bestDocs),
+    sources: await summarizeSources(bestDocs),
   };
 }
 
-function summarizeSources(docs) {
-  return docs.map((d) => ({ sourceId: d.sourceId, chunkIndex: d.chunkIndex }));
+// Builds the citation payload the frontend uses to show "where this answer
+// came from" and to open the Source Viewer: which source, what type/title,
+// and enough positional info (page/timestamp/offset) to jump to the spot.
+async function summarizeSources(docs) {
+  if (docs.length === 0) return [];
+
+  const sourceIds = [...new Set(docs.map((d) => d.sourceId))];
+  const sourceRows = await db
+    .select()
+    .from(schema.sources)
+    .where(inArray(schema.sources.id, sourceIds));
+  const sourceById = new Map(sourceRows.map((s) => [s.id, s]));
+
+  return docs.map((d) => {
+    const source = sourceById.get(d.sourceId);
+    return {
+      sourceId: d.sourceId,
+      chunkId: d.chunkId,
+      chunkIndex: d.chunkIndex,
+      text: d.text,
+      pageNumber: d.pageNumber ?? null,
+      startTimeSeconds: d.startTimeSeconds ?? null,
+      startOffset: d.startOffset ?? null,
+      endOffset: d.endOffset ?? null,
+      sourceTitle: source?.title ?? null,
+      sourceType: source?.sourceType ?? null,
+      sourceUrl: source?.url ?? null,
+    };
+  });
 }
 
 module.exports = { answerQuery };

@@ -4,6 +4,7 @@ const { db, schema } = require("../db");
 const { qdrant, CONFIG } = require("../config");
 const { extractSourceText } = require("../extractors");
 const { chunkText } = require("./chunker");
+const { mapChunkToPosition } = require("./positionMapper");
 const { embedBatch } = require("../embeddings");
 
 async function ensureCollection() {
@@ -33,20 +34,23 @@ async function indexSource(sourceId) {
     .set({ status: "processing", statusError: null })
     .where(eq(schema.sources.id, sourceId));
 
-  // 1) Extract plain text
-  const rawText = await extractSourceText(source);
-  if (!rawText || !rawText.trim()) {
+  // 1) Extract plain text (+ positional segments: pages, timestamps, etc)
+  const { fullText, segments } = await extractSourceText(source);
+  if (!fullText || !fullText.trim()) {
     throw new Error("No text could be extracted from this source.");
   }
 
   await db
     .insert(schema.sourceContents)
-    .values({ sourceId, rawText })
-    .onConflictDoUpdate({ target: schema.sourceContents.sourceId, set: { rawText } });
+    .values({ sourceId, rawText: fullText, segments })
+    .onConflictDoUpdate({
+      target: schema.sourceContents.sourceId,
+      set: { rawText: fullText, segments },
+    });
 
-  // 2) Chunk the text
-  const chunkTexts = await chunkText(rawText);
-  if (chunkTexts.length === 0) {
+  // 2) Chunk the text, each chunk carrying its offset in fullText
+  const chunkPieces = await chunkText(fullText);
+  if (chunkPieces.length === 0) {
     throw new Error("Text produced no chunks.");
   }
 
@@ -56,12 +60,19 @@ async function indexSource(sourceId) {
   const insertedChunks = await db
     .insert(schema.chunks)
     .values(
-      chunkTexts.map((text, i) => ({
-        sourceId,
-        chunkIndex: i,
-        text,
-        tokenCount: Math.round(text.length / 4),
-      }))
+      chunkPieces.map((chunk, i) => {
+        const position = mapChunkToPosition(chunk.start, segments);
+        return {
+          sourceId,
+          chunkIndex: i,
+          text: chunk.text,
+          tokenCount: Math.round(chunk.text.length / 4),
+          pageNumber: position.pageNumber,
+          startTimeSeconds: position.startTimeSeconds,
+          startOffset: chunk.start,
+          endOffset: chunk.end,
+        };
+      })
     )
     .returning();
 
@@ -80,6 +91,10 @@ async function indexSource(sourceId) {
       chunk_id: chunk.id,
       chunk_index: chunk.chunkIndex,
       text: chunk.text,
+      page_number: chunk.pageNumber,
+      start_time_seconds: chunk.startTimeSeconds,
+      start_offset: chunk.startOffset,
+      end_offset: chunk.endOffset,
     },
   }));
   await qdrant.upsert(CONFIG.qdrantCollection, { points });

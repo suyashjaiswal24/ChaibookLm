@@ -45,6 +45,34 @@ export function addSource(getToken, notebookId, type, body, isJson) {
   });
 }
 
+export function deleteSource(getToken, notebookId, sourceId) {
+  return request(getToken, `/notebooks/${notebookId}/sources/${sourceId}`, {
+    method: "DELETE",
+  });
+}
+
+export function reindexSource(getToken, notebookId, sourceId) {
+  return request(getToken, `/notebooks/${notebookId}/sources/${sourceId}/reindex`, {
+    method: "POST",
+  });
+}
+
+export function getSourceContent(getToken, notebookId, sourceId) {
+  return request(getToken, `/notebooks/${notebookId}/sources/${sourceId}/content`);
+}
+
+// Fetches the original uploaded file (PDF/VTT) as a Blob URL, since the
+// route is auth-protected and can't just be linked to directly.
+export async function getSourceFileBlobUrl(getToken, notebookId, sourceId) {
+  const token = await getToken();
+  const res = await fetch(`${API_BASE}/notebooks/${notebookId}/sources/${sourceId}/file`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`Failed to load file: ${res.status}`);
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
 export function getConversation(getToken, notebookId) {
   return request(getToken, `/notebooks/${notebookId}/ask`);
 }

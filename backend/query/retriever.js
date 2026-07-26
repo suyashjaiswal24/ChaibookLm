@@ -30,7 +30,12 @@ async function searchByVector(vector, notebookId) {
     id: r.id,
     text: r.payload.text,
     sourceId: r.payload.source_id,
+    chunkId: r.payload.chunk_id,
     chunkIndex: r.payload.chunk_index,
+    pageNumber: r.payload.page_number,
+    startTimeSeconds: r.payload.start_time_seconds,
+    startOffset: r.payload.start_offset,
+    endOffset: r.payload.end_offset,
     score: r.score,
   }));
 }

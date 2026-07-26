@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@clerk/react";
 import { getConversation, askQuestion } from "./api.js";
 
-function ChatPanel({ notebookId, hasReadySources }) {
+function ChatPanel({ notebookId, hasReadySources, onOpenCitation }) {
   const { getToken } = useAuth();
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
@@ -39,7 +39,15 @@ function ChatPanel({ notebookId, hasReadySources }) {
 
     try {
       const result = await askQuestion(getToken, notebookId, q);
-      setMessages((prev) => [...prev, { role: "assistant", content: result.answer, id: `temp-a-${Date.now()}` }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: result.answer,
+          sources: result.sources,
+          id: `temp-a-${Date.now()}`,
+        },
+      ]);
     } catch (err) {
       setMessages((prev) => [
         ...prev,
@@ -64,6 +72,22 @@ function ChatPanel({ notebookId, hasReadySources }) {
           messages.map((m) => (
             <div key={m.id} className={`chat-message chat-message-${m.role}`}>
               {m.content}
+              {m.role === "assistant" && m.sources && m.sources.length > 0 && (
+                <div className="citations">
+                  {dedupeCitations(m.sources).map((citation, i) => (
+                    <button
+                      key={`${citation.sourceId}-${citation.chunkIndex}`}
+                      className="citation-chip"
+                      onClick={() => onOpenCitation?.(citation)}
+                      title={citation.text}
+                    >
+                      [{i + 1}] {citation.sourceTitle || citation.sourceType}
+                      {citation.pageNumber != null ? ` p.${citation.pageNumber}` : ""}
+                      {citation.startTimeSeconds != null ? ` @${formatTime(citation.startTimeSeconds)}` : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           ))
         )}
@@ -85,6 +109,25 @@ function ChatPanel({ notebookId, hasReadySources }) {
       </form>
     </div>
   );
+}
+
+// Same source chunk can win RRF multiple times across CRAG attempts;
+// keep one citation chip per unique (source, chunk).
+function dedupeCitations(sources) {
+  const seen = new Set();
+  return sources.filter((s) => {
+    const key = `${s.sourceId}-${s.chunkIndex}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function formatTime(totalSeconds) {
+  const seconds = Math.floor(totalSeconds);
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 export default ChatPanel;

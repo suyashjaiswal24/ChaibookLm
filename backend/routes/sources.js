@@ -5,6 +5,7 @@ const { eq, and, desc } = require("drizzle-orm");
 const { db, schema } = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { enqueueSourceProcessing } = require("../queues/sourceQueue");
+const { qdrant, CONFIG } = require("../config");
 
 const router = express.Router({ mergeParams: true });
 router.use(requireAuth);
@@ -125,6 +126,60 @@ router.post("/vtt", upload.single("file"), async (req, res) => {
   res.status(201).json(source);
 });
 
+// Stream the original uploaded file (PDF/VTT) for the Source Viewer.
+// Auth + notebook ownership checked, so files aren't served publicly.
+router.get("/:sourceId/file", async (req, res) => {
+  const notebook = await getOwnedNotebook(req.params.notebookId, req.user.id);
+  if (!notebook) return res.status(404).json({ error: "Notebook not found" });
+
+  const [source] = await db
+    .select()
+    .from(schema.sources)
+    .where(and(eq(schema.sources.id, req.params.sourceId), eq(schema.sources.notebookId, notebook.id)));
+  if (!source || !source.storagePath) return res.status(404).json({ error: "File not found" });
+
+  res.sendFile(path.join(__dirname, "..", "uploads", source.storagePath));
+});
+
+// Get a source's full extracted content + positional segments (for the
+// Source Viewer to highlight/jump to the cited spot).
+router.get("/:sourceId/content", async (req, res) => {
+  const notebook = await getOwnedNotebook(req.params.notebookId, req.user.id);
+  if (!notebook) return res.status(404).json({ error: "Notebook not found" });
+
+  const [source] = await db
+    .select()
+    .from(schema.sources)
+    .where(and(eq(schema.sources.id, req.params.sourceId), eq(schema.sources.notebookId, notebook.id)));
+  if (!source) return res.status(404).json({ error: "Source not found" });
+
+  const [content] = await db
+    .select()
+    .from(schema.sourceContents)
+    .where(eq(schema.sourceContents.sourceId, source.id));
+
+  res.json({ source, content: content || null });
+});
+
+// Re-index a source: wipes its chunks/Qdrant points and re-enqueues the
+// full extract -> chunk -> embed pipeline.
+router.post("/:sourceId/reindex", async (req, res) => {
+  const notebook = await getOwnedNotebook(req.params.notebookId, req.user.id);
+  if (!notebook) return res.status(404).json({ error: "Notebook not found" });
+
+  const [source] = await db
+    .select()
+    .from(schema.sources)
+    .where(and(eq(schema.sources.id, req.params.sourceId), eq(schema.sources.notebookId, notebook.id)));
+  if (!source) return res.status(404).json({ error: "Source not found" });
+
+  await deleteQdrantPointsForSource(source.id);
+  await db.update(schema.sources).set({ status: "pending", statusError: null }).where(eq(schema.sources.id, source.id));
+  await enqueueSourceProcessing(source.id);
+
+  res.json({ message: "Source queued for re-indexing" });
+});
+
 // Delete a source
 router.delete("/:sourceId", async (req, res) => {
   const notebook = await getOwnedNotebook(req.params.notebookId, req.user.id);
@@ -136,7 +191,21 @@ router.delete("/:sourceId", async (req, res) => {
     .returning();
 
   if (!deleted) return res.status(404).json({ error: "Source not found" });
+
+  await deleteQdrantPointsForSource(deleted.id);
+
   res.json({ message: "Source deleted" });
 });
+
+async function deleteQdrantPointsForSource(sourceId) {
+  try {
+    await qdrant.delete(CONFIG.qdrantCollection, {
+      filter: { must: [{ key: "source_id", match: { value: sourceId } }] },
+    });
+  } catch (err) {
+    // Collection may not exist yet if nothing has ever been indexed.
+    console.error(`Failed to delete Qdrant points for source ${sourceId}:`, err.message);
+  }
+}
 
 module.exports = router;

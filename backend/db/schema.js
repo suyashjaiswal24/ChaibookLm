@@ -1,4 +1,4 @@
-const { pgTable, uuid, text, timestamp, pgEnum, integer } = require("drizzle-orm/pg-core");
+const { pgTable, uuid, text, timestamp, pgEnum, integer, real, jsonb } = require("drizzle-orm/pg-core");
 
 const sourceType = pgEnum("source_type", ["pdf", "text", "url", "youtube", "vtt"]);
 const sourceStatus = pgEnum("source_status", ["pending", "processing", "ready", "failed"]);
@@ -38,7 +38,9 @@ const sources = pgTable("sources", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Full extracted plain text for a source (one row per source).
+// Full extracted plain text for a source (one row per source), plus the
+// raw position segments (pages/timestamps/offsets) used to locate chunks
+// back in the original document. See extractors/index.js for the shape.
 const sourceContents = pgTable("source_contents", {
   id: uuid("id").defaultRandom().primaryKey(),
   sourceId: uuid("source_id")
@@ -46,10 +48,16 @@ const sourceContents = pgTable("source_contents", {
     .references(() => sources.id, { onDelete: "cascade" })
     .unique(),
   rawText: text("raw_text").notNull(),
+  segments: jsonb("segments"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Chunked pieces of a source's text, each later embedded into Qdrant.
+// Positional fields are populated depending on the source type, so a
+// citation can jump back to the right spot in the original source:
+//   pdf      -> pageNumber
+//   youtube  -> startTimeSeconds
+//   text/vtt/url -> startOffset/endOffset (character offsets into raw_text)
 const chunks = pgTable("chunks", {
   id: uuid("id").defaultRandom().primaryKey(),
   sourceId: uuid("source_id")
@@ -58,6 +66,10 @@ const chunks = pgTable("chunks", {
   chunkIndex: integer("chunk_index").notNull(),
   text: text("text").notNull(),
   tokenCount: integer("token_count"),
+  pageNumber: integer("page_number"),
+  startTimeSeconds: real("start_time_seconds"),
+  startOffset: integer("start_offset"),
+  endOffset: integer("end_offset"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
