@@ -2,15 +2,6 @@
 
 A NotebookLM-style research assistant: create notebooks, add sources (PDFs, plain text, website URLs, YouTube videos, VTT/SRT transcripts — including whole-course `.zip` uploads), and ask questions grounded in those sources with inline citations that link back to the exact page, timestamp, or passage.
 
-## Live Deployment
-
-- Frontend: _add your Vercel URL here_
-- Backend API: _add your Render URL here_
-
-## Demo Video
-
-_add your demo video link here_
-
 ---
 
 ## Architecture
