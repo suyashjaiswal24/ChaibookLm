@@ -61,6 +61,7 @@ backend/
 │   └── cragLoop.js               Orchestrates the retry loop, builds the citation payload
 ├── queues/sourceQueue.js       BullMQ queue definition
 ├── workers/processSource.js    BullMQ worker entrypoint
+├── memory/mem0.js              Mem0 REST wrapper: per-notebook long-term fact recall
 └── middleware/
     ├── auth.js                  Clerk token verification + user upsert
     └── asyncHandler.js           Wraps routes so rejected promises reach the error handler
@@ -128,6 +129,10 @@ For every question, `cragLoop.js` runs:
 ### 6. Streaming
 
 `POST /api/notebooks/:id/ask/stream` runs the full CRAG loop above (grading needs the complete answer text, so this part isn't streamed), then streams the finalized answer to the client word-by-word over Server-Sent Events — no extra LLM cost, just a client-perceived typewriter effect while the backend already has the final text.
+
+### 7. Long-term memory (Mem0)
+
+Conversation history sent to `generator.js` is capped at the last 10 messages — fine for immediate follow-ups, but a fact stated in message #1 is invisible by message #12. `memory/mem0.js` closes that gap: after every exchange, Mem0 extracts durable facts (preferences, constraints, stated goals) from the Q&A pair and stores them scoped to that notebook's `run_id`. Before generating an answer, the notebook is searched for facts relevant to the *current* question — regardless of how long ago they were mentioned — and injected into the prompt as a distinct "things the user has told you" block, separate from (and trusted more than) the raw conversation history. Memory is scoped per-notebook, not per-user, so it doesn't cross the same isolation boundary as sources/citations; it's entirely optional (skipped silently if `MEM0_API_KEY` is unset) and calls Mem0's REST API directly rather than its npm SDK, since the SDK's LangChain peer dependency conflicted with the chunking library already in use.
 
 ---
 
@@ -200,6 +205,7 @@ All variables live in a single root-level `.env` (see `.env.example`):
 | `QDRANT_URL` | backend | Qdrant instance URL |
 | `QDRANT_API_KEY` | backend | Qdrant API key (only needed for Qdrant Cloud) |
 | `QDRANT_COLLECTION` | backend | Qdrant collection name |
+| `MEM0_API_KEY` | backend | Mem0 API key for long-term per-notebook memory ([app.mem0.ai](https://app.mem0.ai), free tier available). Optional — memory is silently skipped if unset. |
 | `PORT` | backend | API server port (default `3002`) |
 
 ## Deployment
@@ -219,3 +225,4 @@ All variables live in a single root-level `.env` (see `.env.example`):
 - **Per-source retrieval capping** was added deliberately: a naive global top-K over RRF-fused results lets one large, generally-relevant source dominate every answer's context, silently starving smaller sources of any chance to be cited.
 - **Chunking preserves offsets** by re-locating each langchain-split chunk in the original text, rather than tracking offsets through the splitter (which doesn't expose them) — a pragmatic choice that works because chunks are near-verbatim substrings.
 - **Streaming replays a computed answer** rather than streaming raw LLM tokens, because the CRAG loop's grading step needs the complete answer text before it can decide whether to retry — token-level streaming isn't compatible with a self-correcting retrieval loop without either double-generating or streaming a draft that might get discarded.
+- **Memory is scoped per-notebook, not per-user**, even though Mem0 supports both: notebooks are already a hard isolation boundary for sources, so letting a fact from one notebook silently influence answers in an unrelated notebook would contradict that model.

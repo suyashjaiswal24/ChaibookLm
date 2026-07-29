@@ -24,6 +24,7 @@ const { translateQuery } = require("./queryTranslation");
 const { retrieveWithFusion } = require("./retriever");
 const { generateAnswer } = require("./generator");
 const { gradeAnswer } = require("./grader");
+const { searchMemory } = require("../memory/mem0");
 
 /**
  * Run the full CRAG query pipeline for one user question within one notebook.
@@ -38,6 +39,11 @@ async function answerQuery(rawQuery, notebookId, history = []) {
   let bestDocs = [];
   let improvementKeywords = [];
 
+  // Standing facts from this notebook's conversation (e.g. stated
+  // preferences/constraints) that may have scrolled out of `history`'s
+  // limited window — recalled by relevance, not recency.
+  const memories = await searchMemory(notebookId, rawQuery);
+
   for (let attempt = 1; attempt <= CONFIG.maxCragRetries; attempt++) {
     const variants = await translateQuery(rawQuery, improvementKeywords);
     const topDocs = await retrieveWithFusion(variants, notebookId);
@@ -46,7 +52,7 @@ async function answerQuery(rawQuery, notebookId, history = []) {
       return { answer: "No sources have been added to this notebook yet, or nothing relevant was found.", score: 0, attempts: attempt, sources: [] };
     }
 
-    const answer = await generateAnswer(rawQuery, topDocs, history);
+    const answer = await generateAnswer(rawQuery, topDocs, history, memories);
     const { score, improvementKeywords: newKeywords } = await gradeAnswer(rawQuery, answer);
 
     if (score > bestScore) {

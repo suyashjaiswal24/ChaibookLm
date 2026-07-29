@@ -4,6 +4,7 @@ const { db, schema } = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { asyncHandler } = require("../middleware/asyncHandler");
 const { answerQuery } = require("../query/cragLoop");
+const { addMemory } = require("../memory/mem0");
 
 const router = express.Router({ mergeParams: true });
 router.use(requireAuth);
@@ -93,6 +94,13 @@ router.post(
         citations: result.sources,
       });
 
+      // Fire-and-forget: extract any durable facts from this exchange for
+      // later recall, without blocking the response on Mem0's processing.
+      addMemory(notebook.id, [
+        { role: "user", content: question },
+        { role: "assistant", content: result.answer },
+      ]);
+
       res.json({ ...result, conversationId: conversation.id });
     } catch (err) {
       console.error("Ask error:", err);
@@ -154,6 +162,11 @@ router.post(
       content: result.answer,
       citations: result.sources,
     });
+
+    addMemory(notebook.id, [
+      { role: "user", content: question },
+      { role: "assistant", content: result.answer },
+    ]);
 
     const words = result.answer.split(/(\s+)/); // keep whitespace tokens so spacing survives
     for (const word of words) {
